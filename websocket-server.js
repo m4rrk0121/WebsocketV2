@@ -94,8 +94,8 @@ async function startServer() {
             {
               $group: {
                 _id: null,
-                totalVolume: { $sum: { $ifNull: ["$volume_usd", 0] } },
-                totalMarketCap: { $sum: { $ifNull: ["$fdv_usd", 0] } },
+                totalVolume: { $sum: { $ifNull: ["$volume_usd_24h", 0] } },
+                totalMarketCap: { $sum: { $ifNull: ["$market_cap_usd", 0] } },
                 totalTokens: { $sum: 1 },
                 total24hVolume: { 
                   $sum: { 
@@ -143,11 +143,11 @@ async function startServer() {
           
           // FIXED: Use the exact sort field value from the client, not trying to transform it
           if (params.sort === 'marketCap') {
-            console.log('Sorting by market cap (fdv_usd)');
-            sortQuery.fdv_usd = params.direction === 'asc' ? 1 : -1;
+            console.log('Sorting by market cap (market_cap_usd)');
+            sortQuery.market_cap_usd = params.direction === 'asc' ? 1 : -1;
           } else if (params.sort === 'volume') {
-            console.log('Sorting by volume (volume_usd)');
-            sortQuery.volume_usd = params.direction === 'asc' ? 1 : -1;
+            console.log('Sorting by volume (volume_usd_24h)');
+            sortQuery.volume_usd_24h = params.direction === 'asc' ? 1 : -1;
           } else {
             // Default to price sort
             console.log('Sorting by price (price_usd)');
@@ -173,8 +173,8 @@ async function startServer() {
             console.log('First token data (sample):', {
               name: tokens[0].name,
               price_usd: tokens[0].price_usd,
-              fdv_usd: tokens[0].fdv_usd,
-              volume_usd: tokens[0].volume_usd
+              market_cap_usd: tokens[0].market_cap_usd,
+              volume_usd_24h: tokens[0].volume_usd_24h
             });
           } else {
             console.log('No tokens found with the current sort criteria');
@@ -186,8 +186,8 @@ async function startServer() {
             
             // Ensure all required fields exist with defaults if needed
             transformed.price_usd = transformed.price_usd || 0;
-            transformed.fdv_usd = transformed.fdv_usd || 0;
-            transformed.volume_usd = transformed.volume_usd || 0;
+            transformed.market_cap_usd = transformed.market_cap_usd || 0;
+            transformed.volume_usd_24h = transformed.volume_usd_24h || 0;
             
             return transformed;
           });
@@ -261,8 +261,8 @@ async function startServer() {
                 // Ensure all required fields exist with V2 schema fields
                 const transformedToken = { ...result };
                 transformedToken.price_usd = transformedToken.price_usd || 0;
-                transformedToken.fdv_usd = transformedToken.fdv_usd || 0;
-                transformedToken.volume_usd = transformedToken.volume_usd || 0;
+                transformedToken.market_cap_usd = transformedToken.market_cap_usd || 0;
+                transformedToken.volume_usd_24h = transformedToken.volume_usd_24h || 0;
                 transformedToken.volume_usd_h1 = transformedToken.volume_usd_h1 || 0;
                 transformedToken.volume_usd_h6 = transformedToken.volume_usd_h6 || 0;
                 transformedToken.pool_reserve_in_usd = transformedToken.pool_reserve_in_usd || 0;
@@ -363,8 +363,8 @@ async function startServer() {
             // Ensure all required fields exist with defaults if needed
             const transformedToken = { ...updatedToken };
             transformedToken.price_usd = transformedToken.price_usd || 0;
-            transformedToken.fdv_usd = transformedToken.fdv_usd || 0;
-            transformedToken.volume_usd = transformedToken.volume_usd || 0;
+            transformedToken.market_cap_usd = transformedToken.market_cap_usd || 0;
+            transformedToken.volume_usd_24h = transformedToken.volume_usd_24h || 0;
             
             // Broadcast to all connected clients
             io.emit('token-update', transformedToken);
@@ -383,20 +383,20 @@ async function startServer() {
     
     topTokensChangeStream.on('change', async (change) => {
       try {
-        const topMarketCapToken = await tokensCollection.find().sort({ fdv_usd: -1 }).limit(1).toArray();
-        const topVolumeToken = await tokensCollection.find().sort({ volume_usd: -1 }).limit(1).toArray();
+        const topMarketCapToken = await tokensCollection.find().sort({ market_cap_usd: -1 }).limit(1).toArray();
+        const topVolumeToken = await tokensCollection.find().sort({ volume_usd_24h: -1 }).limit(1).toArray();
         
         if (topMarketCapToken.length > 0 && topVolumeToken.length > 0) {
           // Ensure all required fields exist with defaults if needed
           const transformedMarketCapToken = { ...topMarketCapToken[0] };
           transformedMarketCapToken.price_usd = transformedMarketCapToken.price_usd || 0;
-          transformedMarketCapToken.fdv_usd = transformedMarketCapToken.fdv_usd || 0;
-          transformedMarketCapToken.volume_usd = transformedMarketCapToken.volume_usd || 0;
+          transformedMarketCapToken.market_cap_usd = transformedMarketCapToken.market_cap_usd || 0;
+          transformedMarketCapToken.volume_usd_24h = transformedMarketCapToken.volume_usd_24h || 0;
           
           const transformedVolumeToken = { ...topVolumeToken[0] };
           transformedVolumeToken.price_usd = transformedVolumeToken.price_usd || 0;
-          transformedVolumeToken.fdv_usd = transformedVolumeToken.fdv_usd || 0;
-          transformedVolumeToken.volume_usd = transformedVolumeToken.volume_usd || 0;
+          transformedVolumeToken.market_cap_usd = transformedVolumeToken.market_cap_usd || 0;
+          transformedVolumeToken.volume_usd_24h = transformedVolumeToken.volume_usd_24h || 0;
           
           io.emit('top-tokens-update', {
             topMarketCapToken: transformedMarketCapToken,
@@ -418,8 +418,8 @@ async function startServer() {
           {
             $group: {
               _id: null,
-              totalVolume: { $sum: { $ifNull: ["$volume_usd", 0] } },
-              totalMarketCap: { $sum: { $ifNull: ["$fdv_usd", 0] } },
+              totalVolume: { $sum: { $ifNull: ["$volume_usd_24h", 0] } },
+              totalMarketCap: { $sum: { $ifNull: ["$market_cap_usd", 0] } },
               totalTokens: { $sum: 1 }
             }
           }
@@ -458,8 +458,8 @@ async function startServer() {
           // Ensure all required fields exist
           const transformedToken = { ...tokenDetails };
           transformedToken.price_usd = transformedToken.price_usd || 0;
-          transformedToken.fdv_usd = transformedToken.fdv_usd || 0;
-          transformedToken.volume_usd = transformedToken.volume_usd || 0;
+          transformedToken.market_cap_usd = transformedToken.market_cap_usd || 0;
+          transformedToken.volume_usd_24h = transformedToken.volume_usd_24h || 0;
           
           res.json(transformedToken);
         } else {
@@ -487,20 +487,20 @@ async function sendInitialData(socket, db) {
     const tokensCollection = db.collection('tokens');
     
     // Send initial top tokens data
-    const topMarketCapToken = await tokensCollection.find().sort({ fdv_usd: -1 }).limit(1).toArray();
-    const topVolumeToken = await tokensCollection.find().sort({ volume_usd: -1 }).limit(1).toArray();
+    const topMarketCapToken = await tokensCollection.find().sort({ market_cap_usd: -1 }).limit(1).toArray();
+    const topVolumeToken = await tokensCollection.find().sort({ volume_usd_24h: -1 }).limit(1).toArray();
     
     if (topMarketCapToken.length > 0 && topVolumeToken.length > 0) {
       // Ensure all required fields exist with defaults if needed
       const transformedMarketCapToken = { ...topMarketCapToken[0] };
       transformedMarketCapToken.price_usd = transformedMarketCapToken.price_usd || 0;
-      transformedMarketCapToken.fdv_usd = transformedMarketCapToken.fdv_usd || 0;
-      transformedMarketCapToken.volume_usd = transformedMarketCapToken.volume_usd || 0;
+      transformedMarketCapToken.market_cap_usd = transformedMarketCapToken.market_cap_usd || 0;
+      transformedMarketCapToken.volume_usd_24h = transformedMarketCapToken.volume_usd_24h || 0;
       
       const transformedVolumeToken = { ...topVolumeToken[0] };
       transformedVolumeToken.price_usd = transformedVolumeToken.price_usd || 0;
-      transformedVolumeToken.fdv_usd = transformedVolumeToken.fdv_usd || 0;
-      transformedVolumeToken.volume_usd = transformedVolumeToken.volume_usd || 0;
+      transformedVolumeToken.market_cap_usd = transformedVolumeToken.market_cap_usd || 0;
+      transformedVolumeToken.volume_usd_24h = transformedVolumeToken.volume_usd_24h || 0;
       
       socket.emit('top-tokens-update', {
         topMarketCapToken: transformedMarketCapToken,
@@ -512,7 +512,7 @@ async function sendInitialData(socket, db) {
     
     // Send initial tokens list (paginated)
     const tokens = await tokensCollection.find()
-      .sort({ fdv_usd: -1 })
+      .sort({ market_cap_usd: -1 })
       .limit(10) // Default page size
       .toArray();
       
@@ -520,8 +520,8 @@ async function sendInitialData(socket, db) {
       console.log('Initial data - First token (sample):', {
         name: tokens[0].name,
         price_usd: tokens[0].price_usd,
-        fdv_usd: tokens[0].fdv_usd,
-        volume_usd: tokens[0].volume_usd
+        market_cap_usd: tokens[0].market_cap_usd,
+        volume_usd_24h: tokens[0].volume_usd_24h
       });
     } else {
       console.log('No tokens found in initial data load');
@@ -533,8 +533,8 @@ async function sendInitialData(socket, db) {
       
       // Ensure all required fields exist with defaults if needed
       transformed.price_usd = transformed.price_usd || 0;
-      transformed.fdv_usd = transformed.fdv_usd || 0;
-      transformed.volume_usd = transformed.volume_usd || 0;
+      transformed.market_cap_usd = transformed.market_cap_usd || 0;
+      transformed.volume_usd_24h = transformed.volume_usd_24h || 0;
       
       return transformed;
     });
@@ -553,8 +553,8 @@ async function sendInitialData(socket, db) {
         {
           $group: {
             _id: null,
-            totalVolume: { $sum: { $ifNull: ["$volume_usd", 0] } },
-            totalMarketCap: { $sum: { $ifNull: ["$fdv_usd", 0] } },
+            totalVolume: { $sum: { $ifNull: ["$volume_usd_24h", 0] } },
+            totalMarketCap: { $sum: { $ifNull: ["$market_cap_usd", 0] } },
             totalTokens: { $sum: 1 }
           }
         }
