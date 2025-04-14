@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: websocket-v2
+    env: node
+    region: oregon
+    rootDir: .
+    buildCommand: npm install
+    startCommand: node websocket-server.js
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: PORT
+        value: 4003
+      - key: FETCH_INTERVAL
+        value: 1
+      - key: BATCH_SIZE
+        value: 20000
+      - key: BASE_RPC_URL
+        value: https://mainnet.base.org
+    plan: free
+    healthCheckPath: /
+    autoDeploy: true 
