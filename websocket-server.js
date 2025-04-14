@@ -148,6 +148,9 @@ async function startServer() {
           } else if (params.sort === 'volume') {
             console.log('Sorting by volume (volume_usd_24h)');
             sortQuery.volume_usd_24h = params.direction === 'asc' ? 1 : -1;
+          } else if (params.sort === 'blockNumber') {
+            console.log('Sorting by block number (blockNumber)');
+            sortQuery.blockNumber = params.direction === 'asc' ? 1 : -1;
           } else {
             // Default to price sort
             console.log('Sorting by price (price_usd)');
@@ -174,7 +177,8 @@ async function startServer() {
               name: tokens[0].name,
               price_usd: tokens[0].price_usd,
               market_cap_usd: tokens[0].market_cap_usd,
-              volume_usd_24h: tokens[0].volume_usd_24h
+              volume_usd_24h: tokens[0].volume_usd_24h,
+              blockNumber: tokens[0].blockNumber
             });
           } else {
             console.log('No tokens found with the current sort criteria');
@@ -188,6 +192,7 @@ async function startServer() {
             transformed.price_usd = transformed.price_usd || 0;
             transformed.market_cap_usd = transformed.market_cap_usd || 0;
             transformed.volume_usd_24h = transformed.volume_usd_24h || 0;
+            transformed.blockNumber = transformed.blockNumber || 0;
             
             return transformed;
           });
@@ -265,6 +270,7 @@ async function startServer() {
                 transformedToken.volume_usd_24h = transformedToken.volume_usd_24h || 0;
                 transformedToken.volume_usd_h1 = transformedToken.volume_usd_h1 || 0;
                 transformedToken.volume_usd_h6 = transformedToken.volume_usd_h6 || 0;
+                transformedToken.blockNumber = transformedToken.blockNumber || 0;
                 transformedToken.pool_reserve_in_usd = transformedToken.pool_reserve_in_usd || 0;
                 transformedToken.totalSupply = transformedToken.totalSupply || "0";
                 transformedToken.totalSupplyRaw = transformedToken.totalSupplyRaw || "0";
@@ -365,6 +371,7 @@ async function startServer() {
             transformedToken.price_usd = transformedToken.price_usd || 0;
             transformedToken.market_cap_usd = transformedToken.market_cap_usd || 0;
             transformedToken.volume_usd_24h = transformedToken.volume_usd_24h || 0;
+            transformedToken.blockNumber = transformedToken.blockNumber || 0;
             
             // Broadcast to all connected clients
             io.emit('token-update', transformedToken);
@@ -392,11 +399,13 @@ async function startServer() {
           transformedMarketCapToken.price_usd = transformedMarketCapToken.price_usd || 0;
           transformedMarketCapToken.market_cap_usd = transformedMarketCapToken.market_cap_usd || 0;
           transformedMarketCapToken.volume_usd_24h = transformedMarketCapToken.volume_usd_24h || 0;
+          transformedMarketCapToken.blockNumber = transformedMarketCapToken.blockNumber || 0;
           
           const transformedVolumeToken = { ...topVolumeToken[0] };
           transformedVolumeToken.price_usd = transformedVolumeToken.price_usd || 0;
           transformedVolumeToken.market_cap_usd = transformedVolumeToken.market_cap_usd || 0;
           transformedVolumeToken.volume_usd_24h = transformedVolumeToken.volume_usd_24h || 0;
+          transformedVolumeToken.blockNumber = transformedVolumeToken.blockNumber || 0;
           
           io.emit('top-tokens-update', {
             topMarketCapToken: transformedMarketCapToken,
@@ -460,6 +469,7 @@ async function startServer() {
           transformedToken.price_usd = transformedToken.price_usd || 0;
           transformedToken.market_cap_usd = transformedToken.market_cap_usd || 0;
           transformedToken.volume_usd_24h = transformedToken.volume_usd_24h || 0;
+          transformedToken.blockNumber = transformedToken.blockNumber || 0;
           
           res.json(transformedToken);
         } else {
@@ -496,11 +506,13 @@ async function sendInitialData(socket, db) {
       transformedMarketCapToken.price_usd = transformedMarketCapToken.price_usd || 0;
       transformedMarketCapToken.market_cap_usd = transformedMarketCapToken.market_cap_usd || 0;
       transformedMarketCapToken.volume_usd_24h = transformedMarketCapToken.volume_usd_24h || 0;
+      transformedMarketCapToken.blockNumber = transformedMarketCapToken.blockNumber || 0;
       
       const transformedVolumeToken = { ...topVolumeToken[0] };
       transformedVolumeToken.price_usd = transformedVolumeToken.price_usd || 0;
       transformedVolumeToken.market_cap_usd = transformedVolumeToken.market_cap_usd || 0;
       transformedVolumeToken.volume_usd_24h = transformedVolumeToken.volume_usd_24h || 0;
+      transformedVolumeToken.blockNumber = transformedVolumeToken.blockNumber || 0;
       
       socket.emit('top-tokens-update', {
         topMarketCapToken: transformedMarketCapToken,
@@ -535,6 +547,7 @@ async function sendInitialData(socket, db) {
       transformed.price_usd = transformed.price_usd || 0;
       transformed.market_cap_usd = transformed.market_cap_usd || 0;
       transformed.volume_usd_24h = transformed.volume_usd_24h || 0;
+      transformed.blockNumber = transformed.blockNumber || 0;
       
       return transformed;
     });
