@@ -145,7 +145,6 @@ async function startServer() {
           } else if (params.sort === 'blockNumber') {
             // For block number sorting, we'll use a compound sort to handle null values
             sortQuery = {
-              blockNumber: { $exists: true },
               blockNumber: params.direction === 'asc' ? 1 : -1
             };
           } else {
@@ -162,8 +161,11 @@ async function startServer() {
 
           // If sorting by block number, ensure we only get tokens with block numbers
           if (params.sort === 'blockNumber') {
-            query.blockNumber = { $exists: true, $ne: null };
+            query.blockNumber = { $exists: true, $ne: null, $gt: 0 };
           }
+
+          console.log('Sort Query:', sortQuery);
+          console.log('Filter Query:', query);
 
           const tokens = await tokensCollection.find(query)
             .sort(sortQuery)
@@ -171,6 +173,18 @@ async function startServer() {
             .limit(pageSize)
             .toArray();
           
+          // Log the first few tokens for debugging
+          if (tokens.length > 0) {
+            console.log('First few tokens in result:');
+            tokens.slice(0, 3).forEach(token => {
+              console.log({
+                name: token.name,
+                blockNumber: token.blockNumber,
+                sortField: params.sort
+              });
+            });
+          }
+
           const transformedTokens = tokens.map(token => ({
             ...token,
             price_usd: token.price_usd || 0,
