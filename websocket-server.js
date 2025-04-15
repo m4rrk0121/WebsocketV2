@@ -337,7 +337,59 @@ async function startServer() {
           });
         }
       });
-      
+      // Add this new handler after the 'get-tokens' handler
+socket.on('search-tokens', async (params) => {
+  try {
+    console.log('Search request received:', params.query);
+    
+    // Create search query with multiple conditions
+    const searchQuery = {
+      $or: [
+        { name: { $regex: params.query, $options: 'i' } },
+        { symbol: { $regex: params.query, $options: 'i' } },
+        { contractAddress: { $regex: params.query, $options: 'i' } }
+      ],
+      // Exclude WETH and UNI-V3-POS tokens
+      symbol: { 
+        $nin: ['WETH', 'UNI-V3-POS'] 
+      }
+    };
+
+    // Fetch all matching tokens (no pagination for search)
+    const searchResults = await tokensCollection.find(searchQuery)
+      .sort({ market_cap_usd: -1 })
+      .toArray();
+
+    console.log(`Found ${searchResults.length} tokens matching search query`);
+
+    // Transform results to ensure all required fields
+    const transformedResults = searchResults.map(token => ({
+      ...token,
+      price_usd: token.price_usd || 0,
+      market_cap_usd: token.market_cap_usd || 0,
+      volume_usd_24h: token.volume_usd_24h || 0,
+      volume_usd_h1: token.volume_usd_h1 || 0,
+      volume_usd_h6: token.volume_usd_h6 || 0,
+      blockNumber: token.blockNumber || 0,
+      pool_reserve_in_usd: token.pool_reserve_in_usd || 0,
+      totalSupply: token.totalSupply || "0",
+      totalSupplyRaw: token.totalSupplyRaw || "0",
+      decimals: token.decimals || 18,
+      __v: token.__v || 0,
+      createdAt: token.createdAt || new Date().toISOString(),
+      updatedAt: token.updatedAt || new Date().toISOString(),
+      last_updated: token.last_updated || new Date().toISOString()
+    }));
+
+    // Send search results back to client
+    socket.emit('search-results', {
+      tokens: transformedResults
+    });
+  } catch (err) {
+    console.error('Error performing search:', err);
+    socket.emit('error', { message: 'Failed to perform search' });
+  }
+});
       // Keep-alive periodic check
       const keepAliveInterval = setInterval(() => {
         if (socket.connected) {
