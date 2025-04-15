@@ -57,18 +57,6 @@ const io = new Server(server, {
 const uri = process.env.MONGODB_URI;
 const client = new MongoClient(uri);
 
-// Create a reusable token filter that we can apply across all queries
-const createTokenFilter = () => {
-  return {
-    $and: [
-      // Filter out WETH and Uniswap V3 LP tokens
-      { symbol: { $nin: ['WETH', 'UNI-V3-POS'] } },
-      // Filter out tokens with market cap of $0
-      { market_cap_usd: { $gt: 0 } }
-    ]
-  };
-};
-
 async function startServer() {
   try {
     await client.connect();
@@ -96,17 +84,13 @@ async function startServer() {
       // Send initial data when client connects
       sendInitialData(socket, db);
       
-      // Handle global statistics request
+      // NEW: Handle global statistics request
       socket.on('get-global-stats', async () => {
         try {
           console.log(`[Server] Client ${socket.id} requested global statistics`);
           
-          // Apply our filter to global stats calculation
-          const tokenFilter = createTokenFilter();
-          
-          // Aggregate to calculate global statistics with filters
+          // Aggregate to calculate global statistics across ALL tokens
           const aggregateResult = await tokensCollection.aggregate([
-            { $match: tokenFilter },
             {
               $group: {
                 _id: null,
@@ -134,11 +118,11 @@ async function startServer() {
           } : {
             totalVolume: 0,
             totalMarketCap: 0,
-            totalTokens: await tokensCollection.countDocuments(tokenFilter),
+            totalTokens: await tokensCollection.countDocuments(),
             total24hVolume: 0
           };
           
-          console.log(`[Server] Global stats calculated (with filters): ${JSON.stringify(globalStats)}`);
+          console.log(`[Server] Global stats calculated: ${JSON.stringify(globalStats)}`);
           
           // Send to requesting client
           socket.emit('global-stats-update', globalStats);
@@ -178,17 +162,14 @@ async function startServer() {
           
           console.log(`Using sort query:`, sortQuery);
           
-          // Apply token filter to query
-          const tokenFilter = createTokenFilter();
-          
-          // Fetch tokens with sorting, filtering, and pagination
-          const tokens = await tokensCollection.find(tokenFilter)
+          // Fetch tokens with sorting and pagination
+          const tokens = await tokensCollection.find()
             .sort(sortQuery)
             .skip((page - 1) * pageSize)
             .limit(pageSize)
             .toArray();
           
-          console.log(`Found ${tokens.length} tokens with the applied sort and filters`);
+          console.log(`Found ${tokens.length} tokens with the applied sort`);
           
           // Log the first token for debugging
           if (tokens.length > 0) {
@@ -200,7 +181,7 @@ async function startServer() {
               blockNumber: tokens[0].blockNumber
             });
           } else {
-            console.log('No tokens found with the current sort criteria and filters');
+            console.log('No tokens found with the current sort criteria');
           }
           
           // Ensure all tokens have required fields with defaults if needed
@@ -216,8 +197,7 @@ async function startServer() {
             return transformed;
           });
             
-          // Count only documents that match our filter
-          const totalCount = await tokensCollection.countDocuments(tokenFilter);
+          const totalCount = await tokensCollection.countDocuments();
           const totalPages = Math.ceil(totalCount / pageSize);
           
           // Send response back to client
@@ -358,70 +338,6 @@ async function startServer() {
         }
       });
       
-      // Handle search tokens
-      socket.on('search-tokens', async (params) => {
-        try {
-          console.log('Search request received:', params.query);
-          
-          // Get base token filter
-          const baseFilter = createTokenFilter();
-          
-          // Add search-specific conditions
-          const searchQuery = {
-            $and: [
-              // Include the base filter conditions
-              ...baseFilter.$and,
-              // Add search-specific condition
-              {
-                $or: [
-                  { name: { $regex: params.query, $options: 'i' } },
-                  { symbol: { $regex: params.query, $options: 'i' } },
-                  { contractAddress: { $regex: params.query, $options: 'i' } }
-                ]
-              }
-            ]
-          };
-
-          // Fetch all matching tokens (no pagination for search)
-          const searchResults = await tokensCollection.find(searchQuery)
-            .sort({ market_cap_usd: -1 })
-            .toArray();
-
-          console.log(`Found ${searchResults.length} tokens matching search query and filters`);
-
-          // Transform results to ensure all required fields
-          const transformedResults = searchResults.map(token => ({
-            ...token,
-            price_usd: token.price_usd || 0,
-            market_cap_usd: token.market_cap_usd || 0,
-            volume_usd_24h: token.volume_usd_24h || 0,
-            volume_usd_h1: token.volume_usd_h1 || 0,
-            volume_usd_h6: token.volume_usd_h6 || 0,
-            blockNumber: token.blockNumber || 0,
-            pool_reserve_in_usd: token.pool_reserve_in_usd || 0,
-            totalSupply: token.totalSupply || "0",
-            totalSupplyRaw: token.totalSupplyRaw || "0",
-            decimals: token.decimals || 18,
-            __v: token.__v || 0,
-            createdAt: token.createdAt || new Date().toISOString(),
-            updatedAt: token.updatedAt || new Date().toISOString(),
-            last_updated: token.last_updated || new Date().toISOString()
-          }));
-
-          // Send search results back to client
-          socket.emit('search-results', {
-            tokens: transformedResults,
-            query: params.query // Send back the query for reference
-          });
-        } catch (err) {
-          console.error('Error performing search:', err);
-          socket.emit('error', { 
-            message: 'Failed to perform search',
-            details: err.message
-          });
-        }
-      });
-      
       // Keep-alive periodic check
       const keepAliveInterval = setInterval(() => {
         if (socket.connected) {
@@ -474,17 +390,8 @@ async function startServer() {
     
     topTokensChangeStream.on('change', async (change) => {
       try {
-        const tokenFilter = createTokenFilter();
-        
-        const topMarketCapToken = await tokensCollection.find(tokenFilter)
-          .sort({ market_cap_usd: -1 })
-          .limit(1)
-          .toArray();
-          
-        const topVolumeToken = await tokensCollection.find(tokenFilter)
-          .sort({ volume_usd_24h: -1 })
-          .limit(1)
-          .toArray();
+        const topMarketCapToken = await tokensCollection.find().sort({ market_cap_usd: -1 }).limit(1).toArray();
+        const topVolumeToken = await tokensCollection.find().sort({ volume_usd_24h: -1 }).limit(1).toArray();
         
         if (topMarketCapToken.length > 0 && topVolumeToken.length > 0) {
           // Ensure all required fields exist with defaults if needed
@@ -510,17 +417,13 @@ async function startServer() {
       }
     });
     
-    // HTTP API endpoint for global stats
+    // NEW: Set up HTTP API endpoint for global stats
     app.get('/api/global-stats', async (req, res) => {
       try {
         console.log('[Server] Received HTTP request for global stats');
         
-        // Apply our filter
-        const tokenFilter = createTokenFilter();
-        
-        // Aggregate to calculate global statistics with filters
+        // Aggregate to calculate global statistics
         const aggregateResult = await tokensCollection.aggregate([
-          { $match: tokenFilter },
           {
             $group: {
               _id: null,
@@ -539,10 +442,10 @@ async function startServer() {
         } : {
           totalVolume: 0,
           totalMarketCap: 0,
-          totalTokens: await tokensCollection.countDocuments(tokenFilter)
+          totalTokens: await tokensCollection.countDocuments()
         };
         
-        console.log(`[Server] HTTP global stats response (with filters): ${JSON.stringify(globalStats)}`);
+        console.log(`[Server] HTTP global stats response: ${JSON.stringify(globalStats)}`);
         
         res.json(globalStats);
         
@@ -592,18 +495,10 @@ async function startServer() {
 async function sendInitialData(socket, db) {
   try {
     const tokensCollection = db.collection('tokens');
-    const tokenFilter = createTokenFilter();
     
-    // Send initial top tokens data with filters applied
-    const topMarketCapToken = await tokensCollection.find(tokenFilter)
-      .sort({ market_cap_usd: -1 })
-      .limit(1)
-      .toArray();
-      
-    const topVolumeToken = await tokensCollection.find(tokenFilter)
-      .sort({ volume_usd_24h: -1 })
-      .limit(1)
-      .toArray();
+    // Send initial top tokens data
+    const topMarketCapToken = await tokensCollection.find().sort({ market_cap_usd: -1 }).limit(1).toArray();
+    const topVolumeToken = await tokensCollection.find().sort({ volume_usd_24h: -1 }).limit(1).toArray();
     
     if (topMarketCapToken.length > 0 && topVolumeToken.length > 0) {
       // Ensure all required fields exist with defaults if needed
@@ -624,11 +519,11 @@ async function sendInitialData(socket, db) {
         topVolumeToken: transformedVolumeToken
       });
     } else {
-      console.log('No top tokens found in initial data load after applying filters');
+      console.log('No top tokens found in initial data load');
     }
     
-    // Send initial tokens list (paginated) with filters applied
-    const tokens = await tokensCollection.find(tokenFilter)
+    // Send initial tokens list (paginated)
+    const tokens = await tokensCollection.find()
       .sort({ market_cap_usd: -1 })
       .limit(10) // Default page size
       .toArray();
@@ -641,7 +536,7 @@ async function sendInitialData(socket, db) {
         volume_usd_24h: tokens[0].volume_usd_24h
       });
     } else {
-      console.log('No tokens found in initial data load after applying filters');
+      console.log('No tokens found in initial data load');
     }
     
     // Ensure all tokens have required fields with defaults if needed
@@ -657,8 +552,7 @@ async function sendInitialData(socket, db) {
       return transformed;
     });
       
-    // Count only documents that match our filter
-    const totalCount = await tokensCollection.countDocuments(tokenFilter);
+    const totalCount = await tokensCollection.countDocuments();
     const totalPages = Math.ceil(totalCount / 10);
     
     socket.emit('tokens-list-update', {
@@ -666,10 +560,9 @@ async function sendInitialData(socket, db) {
       totalPages
     });
     
-    // Also send initial global stats with filters applied
+    // NEW: Also send initial global stats
     try {
       const aggregateResult = await tokensCollection.aggregate([
-        { $match: tokenFilter },
         {
           $group: {
             _id: null,
@@ -687,15 +580,16 @@ async function sendInitialData(socket, db) {
       } : {
         totalVolume: 0,
         totalMarketCap: 0,
-        totalTokens: await tokensCollection.countDocuments(tokenFilter)
+        totalTokens: await tokensCollection.countDocuments()
       };
       
-      console.log(`[Server] Initial global stats (with filters): ${JSON.stringify(globalStats)}`);
+      console.log(`[Server] Initial global stats: ${JSON.stringify(globalStats)}`);
       socket.emit('global-stats-update', globalStats);
       
     } catch (err) {
       console.error('Error sending initial global stats:', err);
     }
+    
   } catch (err) {
     console.error('Error sending initial data:', err);
   }
