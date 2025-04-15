@@ -135,80 +135,111 @@ async function startServer() {
       
       // Handle get-tokens event for sorting and pagination
       socket.on('get-tokens', async (params) => {
-        console.log('SORT DEBUG - Original params:', JSON.stringify(params));
-        
         try {
-          // Build sorting query based on parameters
           let sortQuery = {};
           
-          // FIXED: Use the exact sort field value from the client, not trying to transform it
           if (params.sort === 'marketCap') {
-            console.log('Sorting by market cap (market_cap_usd)');
             sortQuery.market_cap_usd = params.direction === 'asc' ? 1 : -1;
           } else if (params.sort === 'volume') {
-            console.log('Sorting by volume (volume_usd_24h)');
             sortQuery.volume_usd_24h = params.direction === 'asc' ? 1 : -1;
           } else if (params.sort === 'blockNumber') {
-            console.log('Sorting by block number (blockNumber)');
-            sortQuery.blockNumber = params.direction === 'asc' ? 1 : -1;
+            // For block number sorting, we'll use a compound sort to handle null values
+            sortQuery = {
+              blockNumber: { $exists: true },
+              blockNumber: params.direction === 'asc' ? 1 : -1
+            };
           } else {
-            // Default to price sort
-            console.log('Sorting by price (price_usd)');
             sortQuery.price_usd = params.direction === 'asc' ? 1 : -1;
           }
           
           const page = params.page || 1;
-          const pageSize = 10; // Adjust as needed
+          const pageSize = 10;
           
-          console.log(`Using sort query:`, sortQuery);
-          
-          // Fetch tokens with sorting and pagination
-          const tokens = await tokensCollection.find()
+          // Exclude WETH and UNI-V3-POS tokens
+          const query = {
+            symbol: { $nin: ['WETH', 'UNI-V3-POS'] }
+          };
+
+          // If sorting by block number, ensure we only get tokens with block numbers
+          if (params.sort === 'blockNumber') {
+            query.blockNumber = { $exists: true, $ne: null };
+          }
+
+          const tokens = await tokensCollection.find(query)
             .sort(sortQuery)
             .skip((page - 1) * pageSize)
             .limit(pageSize)
             .toArray();
           
-          console.log(`Found ${tokens.length} tokens with the applied sort`);
-          
-          // Log the first token for debugging
-          if (tokens.length > 0) {
-            console.log('First token data (sample):', {
-              name: tokens[0].name,
-              price_usd: tokens[0].price_usd,
-              market_cap_usd: tokens[0].market_cap_usd,
-              volume_usd_24h: tokens[0].volume_usd_24h,
-              blockNumber: tokens[0].blockNumber
-            });
-          } else {
-            console.log('No tokens found with the current sort criteria');
-          }
-          
-          // Ensure all tokens have required fields with defaults if needed
-          const transformedTokens = tokens.map(token => {
-            const transformed = { ...token };
+          const transformedTokens = tokens.map(token => ({
+            ...token,
+            price_usd: token.price_usd || 0,
+            market_cap_usd: token.market_cap_usd || 0,
+            volume_usd_24h: token.volume_usd_24h || 0,
+            blockNumber: token.blockNumber || 0
+          }));
             
-            // Ensure all required fields exist with defaults if needed
-            transformed.price_usd = transformed.price_usd || 0;
-            transformed.market_cap_usd = transformed.market_cap_usd || 0;
-            transformed.volume_usd_24h = transformed.volume_usd_24h || 0;
-            transformed.blockNumber = transformed.blockNumber || 0;
-            
-            return transformed;
-          });
-            
-          const totalCount = await tokensCollection.countDocuments();
+          const totalCount = await tokensCollection.countDocuments(query);
           const totalPages = Math.ceil(totalCount / pageSize);
           
-          // Send response back to client
           socket.emit('tokens-list-update', {
             tokens: transformedTokens,
             totalPages
           });
         } catch (err) {
           console.error('Error fetching tokens:', err);
-          console.error('Error details:', err.stack);
           socket.emit('error', { message: 'Failed to fetch tokens' });
+        }
+      });
+      
+      // Handle search tokens
+      socket.on('search-tokens', async (params) => {
+        try {
+          console.log('Search request received:', params.query);
+          
+          // Create search query with multiple conditions
+          const searchQuery = {
+            $and: [
+              // Exclude WETH and UNI-V3-POS tokens
+              { symbol: { $nin: ['WETH', 'UNI-V3-POS'] } },
+              // Search conditions
+              {
+                $or: [
+                  { name: { $regex: params.query, $options: 'i' } },
+                  { symbol: { $regex: params.query, $options: 'i' } },
+                  { contractAddress: { $regex: params.query, $options: 'i' } }
+                ]
+              }
+            ]
+          };
+
+          // Fetch all matching tokens (no pagination for search)
+          const searchResults = await tokensCollection.find(searchQuery)
+            .sort({ market_cap_usd: -1 })
+            .toArray();
+
+          console.log(`Found ${searchResults.length} tokens matching search query`);
+
+          // Transform results to ensure all required fields
+          const transformedResults = searchResults.map(token => ({
+            ...token,
+            price_usd: token.price_usd || 0,
+            market_cap_usd: token.market_cap_usd || 0,
+            volume_usd_24h: token.volume_usd_24h || 0,
+            blockNumber: token.blockNumber || 0
+          }));
+
+          // Send search results back to client
+          socket.emit('search-results', {
+            tokens: transformedResults,
+            query: params.query // Send back the query for reference
+          });
+        } catch (err) {
+          console.error('Error performing search:', err);
+          socket.emit('error', { 
+            message: 'Failed to perform search',
+            details: err.message
+          });
         }
       });
       
