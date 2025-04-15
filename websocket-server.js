@@ -342,17 +342,20 @@ socket.on('search-tokens', async (params) => {
   try {
     console.log('Search request received:', params.query);
     
-    // Create search query with multiple conditions
+    // Create search query with multiple conditions and proper token exclusion
     const searchQuery = {
-      $or: [
-        { name: { $regex: params.query, $options: 'i' } },
-        { symbol: { $regex: params.query, $options: 'i' } },
-        { contractAddress: { $regex: params.query, $options: 'i' } }
-      ],
-      // Exclude WETH and UNI-V3-POS tokens
-      symbol: { 
-        $nin: ['WETH', 'UNI-V3-POS'] 
-      }
+      $and: [
+        {
+          $or: [
+            { name: { $regex: params.query, $options: 'i' } },
+            { symbol: { $regex: params.query, $options: 'i' } },
+            { contractAddress: { $regex: params.query, $options: 'i' } }
+          ]
+        },
+        {
+          symbol: { $nin: ['WETH', 'UNI-V3-POS'] }
+        }
+      ]
     };
 
     // Fetch all matching tokens (no pagination for search)
@@ -383,11 +386,15 @@ socket.on('search-tokens', async (params) => {
 
     // Send search results back to client
     socket.emit('search-results', {
-      tokens: transformedResults
+      tokens: transformedResults,
+      query: params.query // Send back the query for reference
     });
   } catch (err) {
     console.error('Error performing search:', err);
-    socket.emit('error', { message: 'Failed to perform search' });
+    socket.emit('error', { 
+      message: 'Failed to perform search',
+      details: err.message
+    });
   }
 });
       // Keep-alive periodic check
