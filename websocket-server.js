@@ -89,8 +89,16 @@ async function startServer() {
         try {
           console.log(`[Server] Client ${socket.id} requested global statistics`);
           
-          // Aggregate to calculate global statistics across ALL tokens
+          // Aggregate to calculate global statistics across ALL tokens except WETH
           const aggregateResult = await tokensCollection.aggregate([
+            {
+              $match: {
+                $and: [
+                  { symbol: { $ne: 'WETH' } },
+                  { contractAddress: { $ne: '0x4200000000000000000000000000000000000006' } }
+                ]
+              }
+            },
             {
               $group: {
                 _id: null,
@@ -154,9 +162,12 @@ async function startServer() {
           const page = params.page || 1;
           const pageSize = 10;
           
-          // Exclude WETH and UNI-V3-POS tokens
+          // Exclude WETH tokens and contract address
           const query = {
-            symbol: { $nin: ['WETH', 'UNI-V3-POS'] }
+            $and: [
+              { symbol: { $ne: 'WETH' } },
+              { contractAddress: { $ne: '0x4200000000000000000000000000000000000006' } }
+            ]
           };
 
           // If sorting by block number, ensure we only get tokens with block numbers
@@ -214,8 +225,9 @@ async function startServer() {
           // Create search query with multiple conditions
           const searchQuery = {
             $and: [
-              // Exclude WETH and UNI-V3-POS tokens
-              { symbol: { $nin: ['WETH', 'UNI-V3-POS'] } },
+              // Exclude WETH tokens and contract address
+              { symbol: { $ne: 'WETH' } },
+              { contractAddress: { $ne: '0x4200000000000000000000000000000000000006' } },
               // Search conditions
               {
                 $or: [
@@ -435,8 +447,19 @@ async function startServer() {
     
     topTokensChangeStream.on('change', async (change) => {
       try {
-        const topMarketCapToken = await tokensCollection.find().sort({ market_cap_usd: -1 }).limit(1).toArray();
-        const topVolumeToken = await tokensCollection.find().sort({ volume_usd_24h: -1 }).limit(1).toArray();
+        const topMarketCapToken = await tokensCollection.find({
+          $and: [
+            { symbol: { $ne: 'WETH' } },
+            { contractAddress: { $ne: '0x4200000000000000000000000000000000000006' } }
+          ]
+        }).sort({ market_cap_usd: -1 }).limit(1).toArray();
+        
+        const topVolumeToken = await tokensCollection.find({
+          $and: [
+            { symbol: { $ne: 'WETH' } },
+            { contractAddress: { $ne: '0x4200000000000000000000000000000000000006' } }
+          ]
+        }).sort({ volume_usd_24h: -1 }).limit(1).toArray();
         
         if (topMarketCapToken.length > 0 && topVolumeToken.length > 0) {
           // Ensure all required fields exist with defaults if needed
@@ -541,9 +564,20 @@ async function sendInitialData(socket, db) {
   try {
     const tokensCollection = db.collection('tokens');
     
-    // Send initial top tokens data
-    const topMarketCapToken = await tokensCollection.find().sort({ market_cap_usd: -1 }).limit(1).toArray();
-    const topVolumeToken = await tokensCollection.find().sort({ volume_usd_24h: -1 }).limit(1).toArray();
+    // Send initial top tokens data, excluding WETH
+    const topMarketCapToken = await tokensCollection.find({
+      $and: [
+        { symbol: { $ne: 'WETH' } },
+        { contractAddress: { $ne: '0x4200000000000000000000000000000000000006' } }
+      ]
+    }).sort({ market_cap_usd: -1 }).limit(1).toArray();
+    
+    const topVolumeToken = await tokensCollection.find({
+      $and: [
+        { symbol: { $ne: 'WETH' } },
+        { contractAddress: { $ne: '0x4200000000000000000000000000000000000006' } }
+      ]
+    }).sort({ volume_usd_24h: -1 }).limit(1).toArray();
     
     if (topMarketCapToken.length > 0 && topVolumeToken.length > 0) {
       // Ensure all required fields exist with defaults if needed
@@ -567,8 +601,13 @@ async function sendInitialData(socket, db) {
       console.log('No top tokens found in initial data load');
     }
     
-    // Send initial tokens list (paginated)
-    const tokens = await tokensCollection.find()
+    // Send initial tokens list (paginated), excluding WETH
+    const tokens = await tokensCollection.find({
+      $and: [
+        { symbol: { $ne: 'WETH' } },
+        { contractAddress: { $ne: '0x4200000000000000000000000000000000000006' } }
+      ]
+    })
       .sort({ market_cap_usd: -1 })
       .limit(10) // Default page size
       .toArray();
@@ -605,9 +644,17 @@ async function sendInitialData(socket, db) {
       totalPages
     });
     
-    // NEW: Also send initial global stats
+    // NEW: Also send initial global stats, excluding WETH
     try {
       const aggregateResult = await tokensCollection.aggregate([
+        {
+          $match: {
+            $and: [
+              { symbol: { $ne: 'WETH' } },
+              { contractAddress: { $ne: '0x4200000000000000000000000000000000000006' } }
+            ]
+          }
+        },
         {
           $group: {
             _id: null,
