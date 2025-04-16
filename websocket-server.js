@@ -564,6 +564,97 @@ async function startServer() {
       }
     });
     
+    // Add this endpoint for getting token info with image
+    app.get('/api/token/:contractAddress', async (req, res) => {
+      try {
+        const { contractAddress } = req.params;
+        
+        // Query MongoDB for the token
+        const token = await db.collection('tokens').findOne(
+          { contractAddress: contractAddress.toLowerCase() }
+        );
+        
+        if (!token) {
+          return res.status(404).json({ error: 'Token not found' });
+        }
+        
+        res.json(token);
+      } catch (error) {
+        console.error('Error fetching token:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    // Update token info endpoint
+    app.post('/api/update-token-info-url', async (req, res) => {
+      try {
+        const { contractAddress, name, symbol, image, txHash } = req.body;
+        
+        // Validate required fields
+        if (!contractAddress) {
+          return res.status(400).json({ error: 'Contract address is required' });
+        }
+
+        // Update document with image info
+        const result = await db.collection('tokens').updateOne(
+          { contractAddress: contractAddress.toLowerCase() },
+          {
+            $set: {
+              name,
+              symbol,
+              image: {
+                url: image.url,
+                cloudinary_id: image.cloudinary_id,
+                asset_id: image.asset_id,
+                version: image.version,
+                format: image.format,
+                resource_type: image.resource_type
+              },
+              updatedAt: new Date(),
+              txHash
+            }
+          },
+          { upsert: true }
+        );
+
+        console.log('Token update result:', result);
+        
+        res.json({ 
+          success: true, 
+          message: 'Token info updated successfully',
+          modifiedCount: result.modifiedCount,
+          upsertedCount: result.upsertedCount
+        });
+      } catch (error) {
+        console.error('Error updating token info:', error);
+        res.status(500).json({ error: 'Failed to update token info' });
+      }
+    });
+    
+    // Websocket event handler for token updates
+    io.on('connection', (socket) => {
+      console.log('Client connected');
+
+      socket.on('get-token', async (contractAddress) => {
+        try {
+          const token = await db.collection('tokens').findOne(
+            { contractAddress: contractAddress.toLowerCase() }
+          );
+          
+          if (token) {
+            socket.emit('token-info', token);
+          } else {
+            socket.emit('token-info-error', 'Token not found');
+          }
+        } catch (error) {
+          console.error('Error fetching token:', error);
+          socket.emit('token-info-error', 'Failed to fetch token info');
+        }
+      });
+
+      // ... rest of your existing socket handlers ...
+    });
+    
     // Start the server
     const PORT = process.env.PORT || 4003;
     server.listen(PORT, () => {
