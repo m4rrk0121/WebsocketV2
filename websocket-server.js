@@ -57,6 +57,11 @@ const io = new Server(server, {
 const uri = process.env.MONGODB_URI;
 const client = new MongoClient(uri);
 
+// Add these variables at the top level, after the MongoDB connection setup
+let updateQueue = [];
+let batchTimeout;
+const userViewportTokens = new Map();
+
 async function startServer() {
   try {
     await client.connect();
@@ -74,6 +79,11 @@ async function startServer() {
     io.on('connection', (socket) => {
       console.log('Client connected:', socket.id);
       console.log('Client origin:', socket.handshake.headers.origin);
+      
+      // Add viewport tracking handler
+      socket.on('viewport-tokens', (tokenAddresses) => {
+        userViewportTokens.set(socket.id, new Set(tokenAddresses));
+      });
       
       // Handle ping events from client with pong response
       socket.on('ping', () => {
@@ -404,6 +414,7 @@ async function startServer() {
       
       socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
+        userViewportTokens.delete(socket.id);
         clearInterval(keepAliveInterval);
       });
     });
@@ -430,11 +441,15 @@ async function startServer() {
             transformedToken.volume_usd_24h = transformedToken.volume_usd_24h || 0;
             transformedToken.blockNumber = transformedToken.blockNumber || 0;
             
-            // Broadcast to all connected clients
-            io.emit('token-update', transformedToken);
+            // Add to update queue instead of broadcasting immediately
+            updateQueue.push(transformedToken);
             
-            // If this token is viewed in detail by any clients, send specific update
-            io.emit('token-details-update', transformedToken);
+            // Process queue if not already scheduled
+            if (!batchTimeout) {
+              batchTimeout = setTimeout(() => {
+                processUpdateQueue();
+              }, 100);
+            }
           })
           .catch(err => {
             console.error('Error fetching updated document:', err);
@@ -685,6 +700,37 @@ async function sendInitialData(socket, db) {
   } catch (err) {
     console.error('Error sending initial data:', err);
   }
+}
+
+// Add this function to process the update queue
+function processUpdateQueue() {
+  if (updateQueue.length === 0) {
+    batchTimeout = null;
+    return;
+  }
+  
+  // Group updates by token address
+  const updatesByToken = {};
+  updateQueue.forEach(token => {
+    updatesByToken[token.contractAddress] = token;
+  });
+  
+  // Clear the queue
+  updateQueue = [];
+  batchTimeout = null;
+  
+  // Send updates to relevant clients
+  userViewportTokens.forEach((tokenSet, socketId) => {
+    const relevantUpdates = Object.values(updatesByToken)
+      .filter(token => tokenSet.has(token.contractAddress));
+    
+    if (relevantUpdates.length > 0) {
+      const socket = io.sockets.sockets.get(socketId);
+      if (socket && socket.connected) {
+        socket.emit('token-updates', relevantUpdates);
+      }
+    }
+  });
 }
 
 startServer().catch(console.error);
