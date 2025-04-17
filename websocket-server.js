@@ -591,7 +591,7 @@ async function startServer() {
     // Update token info endpoint
     app.post('/api/update-token-info-url', async (req, res) => {
       try {
-        const { contractAddress, name, symbol, image, txHash } = req.body;
+        const { contractAddress, name, symbol, image, txHash, description, website, twitter, telegram } = req.body;
         
         // Validate required fields
         if (!contractAddress) {
@@ -613,6 +613,10 @@ async function startServer() {
                 format: image.format,
                 resource_type: image.resource_type
               },
+              description,
+              website,
+              twitter,
+              telegram,
               updatedAt: new Date(),
               txHash
             }
